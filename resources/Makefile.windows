@@ -12,8 +12,11 @@
 # define below, same as they'd pick WEBRTC_POSIX/WEBRTC_LINUX on Linux.
 S := $(VPATH)
 DEBUG ?= /O2
-CXXFLAGS += /nologo /std:c++17 /Zc:__cplusplus /Zc:preprocessor
-CXXFLAGS += /EHs-c- /GR- /MD /W3
+# Needs /std:c++20, not /std:c++17: some WebRTC sources use designated
+# initializers, which GCC/Clang accept under -std=c++17 as an extension but
+# MSVC only accepts starting with C++20 (error C7555 otherwise).
+CXXFLAGS += /nologo /std:c++20 /Zc:__cplusplus /Zc:preprocessor
+CXXFLAGS += /EHs-c- /GR- /MD /W3 /wd4996
 CXXFLAGS += /D_HAS_EXCEPTIONS=0 /D_CRT_SECURE_NO_WARNINGS
 CXXFLAGS += /D__STDC_CONSTANT_MACROS /D__STDC_FORMAT_MACROS
 CXXFLAGS += /DNDEBUG /DNVALGRIND /DDYNAMIC_ANNOTATIONS_ENABLED=0
