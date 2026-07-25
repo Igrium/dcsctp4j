@@ -1,0 +1,147 @@
+name: Build native libraries
+
+# These jobs check out the real WebRTC source and build the actual JNI native
+# libraries with the same scripts documented in the README, so they are slow
+# (WebRTC is large) and need a lot of disk space. If they start failing on
+# standard GitHub-hosted runners due to disk/time limits, consider moving them
+# to larger runners or a schedule instead of every push/PR.
+
+on:
+  push:
+    paths:
+      - "pom.xml"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "resources/**"
+      - "src/**"
+      - "SimpleJNI"
+      - ".github/workflows/build.yml"
+  pull_request:
+    paths:
+      - "pom.xml"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "resources/**"
+      - "src/**"
+      - "SimpleJNI"
+      - ".github/workflows/build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux (x86-64, arm64, ppc64le)
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential g++-aarch64-linux-gnu g++-powerpc64le-linux-gnu cmake
+
+      - name: Build
+        run: resources/ubuntu-build-all.sh "$RUNNER_TEMP/depot_tools" "$RUNNER_TEMP/webrtc"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-native-libs
+          path: src/main/resources/linux-*
+          if-no-files-found: ignore
+
+  macos:
+    name: macOS (x86-64, arm64)
+    runs-on: macos-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Build
+        run: resources/macos-build-all.sh "$RUNNER_TEMP/depot_tools" "$RUNNER_TEMP/webrtc"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-native-libs
+          path: src/main/resources/macos-*
+          if-no-files-found: ignore
+
+  windows:
+    # WebRTC's "gn"/ninja build has no support for cross-compiling to Windows
+    # from a non-Windows host, so (per the README) the Windows target is built
+    # by cross-compiling from Linux with real MSVC running under Wine, via
+    # msvc-wine (https://github.com/mstorsjo/msvc-wine). That's why this job
+    # runs on ubuntu-latest rather than windows-latest -- a real Windows
+    # machine isn't part of the build, by design.
+    name: Windows (x86-64, arm64, via msvc-wine)
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            wine64 python3 msitools ca-certificates winbind make cmake
+
+      - name: Ensure wine64/wineserver are on PATH
+        run: |
+          command -v wine64 >/dev/null || sudo ln -sf /usr/lib/wine/wine64 /usr/local/bin/wine64
+          command -v wineserver >/dev/null || sudo ln -sf /usr/lib/wine/wineserver64 /usr/local/bin/wineserver
+
+      - name: Install msvc-wine
+        run: |
+          git clone --depth 1 https://github.com/mstorsjo/msvc-wine "$RUNNER_TEMP/msvc-wine"
+          "$RUNNER_TEMP/msvc-wine/vsdownload.py" --accept-license --architecture x64 arm64 --dest "$RUNNER_TEMP/msvc"
+          "$RUNNER_TEMP/msvc-wine/install.sh" "$RUNNER_TEMP/msvc"
+
+      - name: Build
+        run: resources/windows-build-all.sh "$RUNNER_TEMP/depot_tools" "$RUNNER_TEMP/webrtc" "$RUNNER_TEMP/msvc"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-native-libs
+          path: src/main/resources/windows-*
+          if-no-files-found: ignore
