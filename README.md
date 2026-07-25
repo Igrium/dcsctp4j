@@ -100,6 +100,16 @@ you have enough disk space and be prepared to wait for some time.
 > Windows support is newer and less exercised than the Linux and macOS builds; if
 you run into build problems, please open an issue.
 
+If you're building directly on a real Windows machine instead of cross-compiling
+(e.g. from a Visual Studio Developer Command Prompt / after running `vcvarsall.bat`,
+where `cl.exe`/`lib.exe` are already on `PATH`), pass `-` instead of an msvc-wine
+directory:
+```
+$ resources/windows-build.sh <JAVA_HOME> ~/WebRTC/src - x86-64
+```
+This is how the `windows` job in `.github/workflows/build.yml` builds, on a
+`windows-latest` GitHub Actions runner.
+
 ### macOS
 - OpenJDK 11 (or newer)
 - XCode

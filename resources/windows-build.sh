@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 if [ "$#" -ne 4 ]; then
     echo "Usage: $0 <JAVA_HOME> <WEBRTC_DIR> <MSVC_DIR> <ARCH>"
-    echo "  JAVA_HOME: Path to a (Linux) Java installation, used to run mvn/javac and for jni.h"
+    echo "  JAVA_HOME: Path to a Java installation, used to run mvn/javac and for jni.h"
     echo "  WEBRTC_DIR: Directory containing WebRTC source"
-    echo "  MSVC_DIR: Directory of the msvc-wine MSVC/WinSDK install (the <dir> passed to install.sh)"
+    echo "  MSVC_DIR: Directory of the msvc-wine MSVC/WinSDK install (the <dir> passed to install.sh),"
+    echo "            or \"-\" to use cl.exe/lib.exe already on PATH (e.g. building natively on"
+    echo "            Windows from a Visual Studio Developer Command Prompt / vcvarsall.bat)"
     echo "  ARCH: Architecture to build for (x86_64 or arm64)"
     exit 1
 fi
@@ -39,9 +41,21 @@ fi
 WEBRTC_BUILD=out/windows-$MSVCARCH
 WEBRTC_OBJ=$WEBRTC_DIR/$WEBRTC_BUILD
 
-export PATH="$MSVC_DIR/bin/$MSVCARCH:$PATH"
+# CMAKE_EXTRA_ARGS differs between cross-compiling (from Linux/macOS via msvc-wine) and
+# building natively on Windows: CMAKE_SYSTEM_NAME=Windows tells CMake to cross-compile,
+# which isn't right (and isn't needed) when already running on Windows; and CMake's
+# default generator on Windows is the multi-config Visual Studio/MSBuild one, which
+# doesn't fit this single-config build the way the other platforms work, so NMake is
+# forced instead, to stay consistent with the Makefile-driven builds on other platforms.
+CMAKE_EXTRA_ARGS=()
+if [ "$MSVC_DIR" != "-" ]; then
+    export PATH="$MSVC_DIR/bin/$MSVCARCH:$PATH"
+    CMAKE_EXTRA_ARGS+=(-DCMAKE_SYSTEM_NAME=Windows)
+else
+    CMAKE_EXTRA_ARGS+=(-G "NMake Makefiles")
+fi
 
-NCPU=$(nproc)
+NCPU=$(nproc 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-1}")
 if [ -n "$NCPU" -a "$NCPU" -gt 1 ]
 then
     MAKE_ARGS="-j $NCPU"
@@ -59,14 +73,17 @@ make $MAKE_ARGS -C "$startdir/resources" \
     CXX=cl \
     AR=lib
 
-if [ -n "$MAKE_ARGS" ]
+if [ -n "$MAKE_ARGS" -a "$MSVC_DIR" != "-" ]
 then
+    # NMake (used natively on Windows, see CMAKE_EXTRA_ARGS above) doesn't understand
+    # GNU make's -j flag, so only forward it to the Unix Makefiles build used when
+    # cross-compiling.
     CMAKE_BUILD_ARGS=" -- $MAKE_ARGS"
 fi
 
 rm -rf cmake-build-windows-"$JNAARCH"
 CC=cl CXX=cl cmake -B cmake-build-windows-"$JNAARCH" \
-    -DCMAKE_SYSTEM_NAME=Windows \
+    "${CMAKE_EXTRA_ARGS[@]}" \
     -DJAVA_HOME="$JAVA_HOME" \
     -DCMAKE_INSTALL_PREFIX="src/main/resources/windows-$JNAARCH" \
     -DWEBRTC_DIR="$WEBRTC_DIR" \

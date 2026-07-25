@@ -95,15 +95,22 @@ jobs:
           if-no-files-found: ignore
 
   windows:
-    # WebRTC's "gn"/ninja build has no support for cross-compiling to Windows
-    # from a non-Windows host, so (per the README) the Windows target is built
-    # by cross-compiling from Linux with real MSVC running under Wine, via
-    # msvc-wine (https://github.com/mstorsjo/msvc-wine). That's why this job
-    # runs on ubuntu-latest rather than windows-latest -- a real Windows
-    # machine isn't part of the build, by design.
-    name: Windows (x86-64, arm64, via msvc-wine)
-    runs-on: ubuntu-latest
+    # Builds natively on a real windows-latest runner, with the MSVC toolset that
+    # already ships on GitHub's Windows images (via ilammy/msvc-dev-cmd, which just
+    # points PATH at it -- no download needed). This is a genuine native compile,
+    # not the msvc-wine cross-compile from Linux that the README documents as the
+    # no-real-Windows-machine-required path; resources/windows-build.sh supports
+    # both by passing "-" as MSVC_DIR to mean "cl.exe/lib.exe are already on PATH".
+    # Scoped to x86-64 only for now: GitHub doesn't offer a native arm64 Windows
+    # runner, and cross-arch (x64 host targeting arm64) would need a separate
+    # ilammy/msvc-dev-cmd setup, so it's left for later if needed.
+    name: Windows (native, x86-64)
+    runs-on: windows-latest
     timeout-minutes: 360
+    env:
+      # Skip the WebRTC/Chromium DEPS hook that tries to download Google-internal
+      # hermetic MSVC on Windows; use the system-installed Visual Studio instead.
+      DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -114,30 +121,23 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force || true
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            wine64 python3 msitools ca-certificates winbind make cmake
-
-      - name: Ensure wine64/wineserver are on PATH
-        run: |
-          command -v wine64 >/dev/null || sudo ln -sf /usr/lib/wine/wine64 /usr/local/bin/wine64
-          command -v wineserver >/dev/null || sudo ln -sf /usr/lib/wine/wineserver64 /usr/local/bin/wineserver
-
-      - name: Install msvc-wine
-        run: |
-          git clone --depth 1 https://github.com/mstorsjo/msvc-wine "$RUNNER_TEMP/msvc-wine"
-          "$RUNNER_TEMP/msvc-wine/vsdownload.py" --accept-license --architecture x64 arm64 --dest "$RUNNER_TEMP/msvc"
-          "$RUNNER_TEMP/msvc-wine/install.sh" "$RUNNER_TEMP/msvc"
+      - name: Install make
+        run: choco install -y make
 
       - name: Build
-        run: resources/windows-build-all.sh "$RUNNER_TEMP/depot_tools" "$RUNNER_TEMP/webrtc" "$RUNNER_TEMP/msvc"
+        shell: bash
+        run: |
+          set -e
+          DEPOT_TOOLS_DIR="$(cygpath -u "$RUNNER_TEMP")/depot_tools"
+          WEBRTC_DIR="$(cygpath -u "$RUNNER_TEMP")/webrtc"
+          WEBRTC_REVISION="$(<resources/WebRTC-revision.txt)"
+          mvn compile
+          resources/checkout-webrtc.sh "$DEPOT_TOOLS_DIR" "$WEBRTC_DIR" "$WEBRTC_REVISION"
+          resources/windows-build.sh "$(cygpath -u "$JAVA_HOME")" "$WEBRTC_DIR" - x86-64
 
       - uses: actions/upload-artifact@v4
         if: always()
