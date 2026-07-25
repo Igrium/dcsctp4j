@@ -16,6 +16,21 @@ DEPOT_TOOLS_DIR=$1
 WEBRTC_DIR=$2
 REV=$3
 
+# On Windows, even running under Git Bash, depot_tools needs its .bat wrappers:
+# the plain fetch/gclient/update_depot_tools scripts are POSIX-only and bootstrap
+# CIPD via a uname-based platform check ("windows-amd64") that has no pinned hash
+# for it in depot_tools' digests file, so it fails before doing anything. The .bat
+# wrappers bootstrap CIPD differently (via PowerShell) and work correctly.
+if [ "$OS" = "Windows_NT" ]; then
+    UPDATE_DEPOT_TOOLS=update_depot_tools.bat
+    FETCH=fetch.bat
+    GCLIENT=gclient.bat
+else
+    UPDATE_DEPOT_TOOLS=update_depot_tools
+    FETCH=fetch
+    GCLIENT=gclient
+fi
+
 STARTDIR=$PWD
 
 if test -d "$DEPOT_TOOLS_DIR"; then
@@ -24,7 +39,7 @@ if test -d "$DEPOT_TOOLS_DIR"; then
         exit 1
     fi
     export PATH="$PATH:$DEPOT_TOOLS_DIR"
-    update_depot_tools
+    "$UPDATE_DEPOT_TOOLS"
 else
     parent="$(dirname "$DEPOT_TOOLS_DIR")"
     mkdir -p "$parent"
@@ -51,8 +66,8 @@ if test -d "$WEBRTC_DIR"; then
 else
     mkdir -p "$WEBRTC_DIR"
     cd "$WEBRTC_DIR"
-    fetch --nohooks webrtc
+    "$FETCH" --nohooks webrtc
 fi
 
-gclient sync -r $REV -D
+"$GCLIENT" sync -r $REV -D
 
