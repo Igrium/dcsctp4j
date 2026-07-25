@@ -48,6 +48,58 @@ $ resources/ubuntu-build-all.sh ~/DepotTools ~/WebRTC
 latter of these is quite large, so if this is your first checkout make sure
 you have enough disk space and be prepared to wait for some time.
 
+### Windows
+
+WebRTC's `gn`/`ninja` build has no support for cross-compiling to Windows from a
+non-Windows host, so the Windows build compiles `libdcsctp.a` directly with the
+MSVC compiler instead (the same approach the ppc64le build above uses, since `gn`
+doesn't support that architecture either). This is done cross-compiling from Linux
+using MSVC running under Wine, via [msvc-wine](https://github.com/mstorsjo/msvc-wine).
+A real Windows machine isn't required.
+
+Prerequisites:
+
+- OpenJDK 11 (or newer) and Maven, to build the JNI headers and jnigen wrapper
+  (a Linux JDK is fine; the Windows build only needs it to run `mvn`/`javac`,
+  and it supplies the platform-independent half of `jni.h`)
+- CMake
+- Git
+- APT packages `wine64`, `python3`, `msitools`, `ca-certificates`, `winbind` (these
+  are [msvc-wine](https://github.com/mstorsjo/msvc-wine)'s own prerequisites)
+
+* Clone the project
+* Update the SimpleJNI subproject with
+```
+$ git submodule update --init
+```
+* Build the JNI headers
+```
+$ mvn compile
+```
+* Download and unpack MSVC and the Windows SDK with
+[msvc-wine](https://github.com/mstorsjo/msvc-wine) (this requires accepting the
+Visual Studio license; the toolchain it downloads isn't redistributable, so it
+isn't checked into this repository or fetched automatically)
+```
+$ git clone https://github.com/mstorsjo/msvc-wine
+$ msvc-wine/vsdownload.py --accept-license --dest ~/msvc
+$ msvc-wine/install.sh ~/msvc
+```
+* Check out WebRTC and build the libraries (adjusting the paths to DepotTools,
+  WebRTC, and the msvc-wine install as desired)
+```
+$ resources/windows-build-all.sh ~/DepotTools ~/WebRTC ~/msvc
+```
+
+> This will automatically check out
+[Google DepotTools](https://www.chromium.org/developers/how-tos/install-depot-tools/) and
+[WebRTC](https://webrtc.github.io/webrtc-org/native-code/development/); the
+latter of these is quite large, so if this is your first checkout make sure
+you have enough disk space and be prepared to wait for some time.
+
+> Windows support is newer and less exercised than the Linux and macOS builds; if
+you run into build problems, please open an issue.
+
 ### macOS
 - OpenJDK 11 (or newer)
 - XCode

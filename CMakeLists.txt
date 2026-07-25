@@ -14,9 +14,19 @@ if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     message(STATUS "CMAKE_INSTALL_PREFIX not set, defaulting to >${CMAKE_INSTALL_PREFIX}<")
 endif ()
 
-set(JAVA_AWT_INCLUDE_PATH NotNeeded)
-set(JAVA_AWT_LIBRARY NotNeeded)
-find_package(JNI)
+if (WIN32)
+    # find_package(JNI)'s win32/jni_md.h probing needs a Windows JDK; the Windows build
+    # cross-compiles with a Linux JDK, so point straight at JAVA_HOME and the bundled
+    # jni_md.h in cmake/jni_md/win32 instead (see that file for details).
+    set(JNI_INCLUDE_DIRS
+        "${JAVA_HOME}/include"
+        "${CMAKE_CURRENT_LIST_DIR}/cmake/jni_md/win32"
+        )
+else ()
+    set(JAVA_AWT_INCLUDE_PATH NotNeeded)
+    set(JAVA_AWT_LIBRARY NotNeeded)
+    find_package(JNI)
+endif ()
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
@@ -50,17 +60,39 @@ if(APPLE)
         )
 endif()
 
-# Need to set this to be able to safely include rtc_base/logging.h.
-# TODO: adjust if you port to Windows.
-target_compile_definitions(${PROJECT_NAME} PUBLIC
-                           WEBRTC_POSIX=1
-                           )
+# rtc_base pulls in networking/thread-naming/crash-dump APIs from these on Windows.
+if(WIN32)
+        target_link_libraries(${PROJECT_NAME} PRIVATE
+        ws2_32
+        winmm
+        iphlpapi
+        )
+endif()
 
-# WebRTC is compiled without RTTI, so turn it off here as well
-# TODO: adjust this if compiling with a non GNU/Clang compiler (e.g. Visual Studio).
-target_compile_options(${PROJECT_NAME} PRIVATE
-                       -fno-rtti
-                       )
+# Need to set this to be able to safely include rtc_base/logging.h.
+if(WIN32)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC
+                               WEBRTC_WIN=1
+                               NOMINMAX
+                               WIN32_LEAN_AND_MEAN
+                               )
+else()
+    target_compile_definitions(${PROJECT_NAME} PUBLIC
+                               WEBRTC_POSIX=1
+                               )
+endif()
+
+# WebRTC is compiled without RTTI, so turn it off here as well.
+if(MSVC)
+    target_compile_options(${PROJECT_NAME} PRIVATE
+                           /GR-
+                           /EHsc
+                           )
+else()
+    target_compile_options(${PROJECT_NAME} PRIVATE
+                           -fno-rtti
+                           )
+endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC
                            ${JNI_INCLUDE_DIRS}
@@ -72,4 +104,5 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 install(TARGETS ${PROJECT_NAME}
         RUNTIME DESTINATION "."
         LIBRARY DESTINATION "."
+        ARCHIVE DESTINATION "."
         )

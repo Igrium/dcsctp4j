@@ -1,0 +1,73 @@
+# Minimal build steps that produce libdcsctp.a for Windows with the MSVC toolchain
+# (e.g. as wrapped by msvc-wine), driven from a Linux host.
+# SPDX-License-Identifier: Apache-2.0
+#
+# "gn" (WebRTC's normal build system) has no support for cross-compiling to Windows
+# from a non-Windows host, so, the same way resources/Makefile stands in for "gn" on
+# ppc64le (which "gn" also doesn't support), this Makefile compiles libdcsctp.a
+# directly with cl.exe/lib.exe. It builds the same net/dcsctp sources, and the same
+# extra rtc_base/abseil/crc32c objects that libdcsctp4j.so needs on the other
+# platforms; the platform-specific rtc_base sources among them (system_time.cc,
+# platform_thread_types.cc, ...) pick their Windows code path off the WEBRTC_WIN
+# define below, same as they'd pick WEBRTC_POSIX/WEBRTC_LINUX on Linux.
+S := $(VPATH)
+DEBUG ?= /O2
+CXXFLAGS += /nologo /std:c++17 /Zc:__cplusplus /Zc:preprocessor
+CXXFLAGS += /EHs-c- /GR- /MD /W3
+CXXFLAGS += /D_HAS_EXCEPTIONS=0 /D_CRT_SECURE_NO_WARNINGS
+CXXFLAGS += /D__STDC_CONSTANT_MACROS /D__STDC_FORMAT_MACROS
+CXXFLAGS += /DNDEBUG /DNVALGRIND /DDYNAMIC_ANNOTATIONS_ENABLED=0
+CXXFLAGS += /DWEBRTC_ENABLE_PROTOBUF=1 /DWEBRTC_STRICT_FIELD_TRIALS=0
+CXXFLAGS += /DWEBRTC_HAVE_SCTP /DABSL_ALLOCATOR_NOTHROW=1
+CXXFLAGS += /DWEBRTC_NON_STATIC_TRACE_EVENT_HANDLERS=1 /DWEBRTC_LIBRARY_IMPL
+CXXFLAGS += /DWEBRTC_WIN /DNOMINMAX /DWIN32_LEAN_AND_MEAN
+CXXFLAGS += /D_WIN32_WINNT=0x0A00 /DWINVER=0x0A00
+CXXFLAGS += $(DEBUG)
+# Add include paths to fix compilation errors due to missing headers.
+CXXFLAGS += /I$(S)
+CXXFLAGS += /I$(S)/third_party/abseil-cpp
+CXXFLAGS += /I$(S)/third_party/crc32c/config
+CXXFLAGS += /I$(S)/third_party/crc32c/src/include
+# Assume all non-test .cc files under net/dcsctp are needed by libdcsctp4j.so.
+# "gn/ninja" includes 37 extra objects but they are not needed by
+# libdcsctp4j.so.
+TESTS = $(shell find $(S)/net/dcsctp -name "*_test*.cc")
+SOURCES = $(shell find $(S)/net/dcsctp -name "*.cc")
+OBJECTS = $(patsubst %.cc,%.o,$(filter-out $(TESTS),$(SOURCES)))
+# Assume all source files are in subdirectories and subsubdirectories of
+# net/dcsctp.
+DIRS = $(shell find $(S) -maxdepth 5 -type d -print)
+# Add other objects required to fix libdcsctp4j.so errors; the same set resources/Makefile
+# needs on Linux/ppc64le.
+OBJECTS += $(S)/api/units/time_delta.o
+OBJECTS += $(S)/rtc_base/checks.o
+OBJECTS += $(S)/rtc_base/logging.o
+OBJECTS += $(S)/rtc_base/platform_thread_types.o
+OBJECTS += $(S)/rtc_base/string_encode.o
+OBJECTS += $(S)/rtc_base/string_utils.o
+OBJECTS += $(S)/rtc_base/strings/string_builder.o
+OBJECTS += $(S)/rtc_base/strings/string_format.o
+OBJECTS += $(S)/rtc_base/system_time.o
+OBJECTS += $(S)/rtc_base/time_utils.o
+OBJECTS += $(S)/third_party/abseil-cpp/absl/base/internal/raw_logging.o
+OBJECTS += $(S)/third_party/abseil-cpp/absl/types/bad_variant_access.o
+OBJECTS += $(S)/third_party/crc32c/src/src/crc32c.o
+OBJECTS += $(S)/third_party/crc32c/src/src/crc32c_portable.o
+# Keep built object paths separate from source code paths.
+ifeq ($(strip $(OBJDIR)),)
+$(error "Set OBJDIR to absolute path in which to store output objects")
+endif
+OBJECTS := $(addprefix $(OBJDIR)/,$(OBJECTS))
+OBJDIRS := $(addprefix $(OBJDIR)/,$(DIRS))
+ifneq ($(strip $(VERBOSE)),1)
+SILENT := @
+endif
+$(OBJDIR)/%.o: %.cc
+	@echo CXX $@
+	$(SILENT)$(CXX) $(CXXFLAGS) /c $< /Fo$@
+$(OBJDIR)/libdcsctp.a: $(OBJECTS)
+	@echo AR $@
+	$(SILENT)$(AR) /nologo /out:$@ $^
+$(OBJECTS): | $(OBJDIRS)
+$(OBJDIRS):
+	@mkdir -p $@
