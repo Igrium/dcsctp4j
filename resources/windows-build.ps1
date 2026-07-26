@@ -36,6 +36,33 @@ function Invoke-Checked
     }
 }
 
+# WebRTC's build/vs_toolchain.py recognizes only Visual Studio 2019 and 2022, and only
+# in their default install locations. Newer Visual Studio releases, and installs placed
+# elsewhere, make it fail with "No supported Visual Studio can be found". It honours a
+# vs<year>_install environment variable, so locate a 2022-generation install ourselves
+# and point it there.
+function Set-VsToolchainEnv
+{
+    if ($env:vs2022_install -or $env:vs2019_install)
+    {
+        return
+    }
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (-not (Test-Path -LiteralPath $vswhere))
+    {
+        return
+    }
+    # [17.0,18.0) is the 2022 generation: the newest this WebRTC revision can drive.
+    $path = & $vswhere -products '*' -version '[17.0,18.0)' `
+        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+        -latest -property installationPath
+    if ($path)
+    {
+        $env:vs2022_install = $path
+        Write-Host "Using Visual Studio at $path"
+    }
+}
+
 switch ($Arch)
 {
     { $_ -in 'x86-64', 'x86_64', 'amd64', 'x64' } {
@@ -58,6 +85,7 @@ else
 }
 
 $env:DEPOT_TOOLS_WIN_TOOLCHAIN = '0'
+Set-VsToolchainEnv
 # CMake's FindJNI consults the JAVA_HOME environment variable.
 $env:JAVA_HOME = $JavaHome
 

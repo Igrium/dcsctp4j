@@ -56,9 +56,17 @@ Prerequisites:
 - Maven
 - CMake
 - Git
-- Visual Studio 2019 or newer, with the "Desktop development with C++" workload
-  and the Windows 10 SDK (including the "Debugging Tools for Windows" component,
-  which DepotTools requires)
+- Visual Studio 2019 or 2022, with the "Desktop development with C++" workload.
+  Newer Visual Studio releases will not work on their own: the pinned WebRTC
+  revision only knows how to drive the 2019 and 2022 toolchains. Having a newer
+  Visual Studio installed alongside one of those is fine, and the build scripts
+  will find the 2022-generation install automatically.
+- Windows SDK version **10.0.22621.0**, including the "Debugging Tools for
+  Windows" component. This exact version is hardcoded in WebRTC's
+  `build/vs_toolchain.py`, so a newer SDK alone is not enough. Without the
+  debugging tools the build stops with a message about a missing
+  `dbghelp.dll`. Both can be added from the Visual Studio Installer, under
+  "Individual components".
 
 Before you start:
 
@@ -108,6 +116,13 @@ nested paths are a common cause of build failures on Windows.
 The scripts set `DEPOT_TOOLS_WIN_TOOLCHAIN=0` so that DepotTools uses your locally
 installed Visual Studio rather than Google's internal toolchain package, which is
 not available outside Google.
+
+They also locate your Visual Studio with `vswhere` and export it as
+`vs2022_install`. WebRTC only looks for Visual Studio in its default install
+location, so an install placed anywhere else — a Build Tools install under
+`C:\Program Files (x86)`, for instance — is otherwise invisible to it and the
+build fails with "No supported Visual Studio can be found". Set `vs2022_install`
+or `vs2019_install` yourself beforehand to override the detection.
 
 To build a single architecture, or to pass build options, call the per-architecture
 script directly:

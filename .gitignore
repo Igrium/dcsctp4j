@@ -1,0 +1,16 @@
+# Maven
+target/
+
+# CMake build trees. The build scripts create cmake-build-linux-*,
+# cmake-build-macos-* and cmake-build-windows-*; IDEs add their own.
+cmake-build-*/
+
+# Native libraries staged for packaging. The build scripts install into these
+# per-platform directories (and resources/fetch-maven.sh copies prebuilt ones
+# here), so they are outputs rather than sources.
+/src/main/resources/darwin-*/
+/src/main/resources/linux-*/
+/src/main/resources/win32-*/
+
+# Visual Studio local state
+.vs/
