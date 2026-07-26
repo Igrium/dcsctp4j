@@ -38,6 +38,6 @@ mvn -s $SETTINGS org.apache.maven.plugins:maven-dependency-plugin:$VER:copy \
 
 rm $SETTINGS
 
-unzip -o "$EXTRACT_DEST/*.jar" "linux-*" "darwin-*" -d "$EXTRACT_DEST"
+unzip -o "$EXTRACT_DEST/*.jar" "linux-*" "darwin-*" "win32-*" -d "$EXTRACT_DEST"
 mkdir -p "$PROJECT_DIR/src/main/resources"
-cp -r "$EXTRACT_DEST/"{darwin,linux}-* "$PROJECT_DIR/src/main/resources" || true
+cp -r "$EXTRACT_DEST/"{darwin,linux,win32}-* "$PROJECT_DIR/src/main/resources" || true
