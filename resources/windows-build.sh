@@ -63,13 +63,29 @@ fi
 
 startdir=$PWD
 
+MAKE_VPATH="$WEBRTC_DIR"
+MAKE_OBJDIR="$WEBRTC_OBJ/obj"
+if [ "$MSVC_DIR" = "-" ]; then
+    # Git Bash auto-converts POSIX-style absolute paths (e.g. "/d/a/...") into
+    # Windows drive-letter form ("D:/a/...") when they're passed as arguments to a
+    # native (non-MSYS) program, which "make" (installed via choco) is. That
+    # drive-letter colon then breaks Makefile.windows's rule parsing: this make
+    # treats the first colon in "D:/a/.../libdcsctp.a: $(OBJECTS)" as the
+    # target/prereq separator, then fails trying to read the remainder as a static
+    # pattern rule ("target pattern contains no '%'"). Passing VPATH/OBJDIR as
+    # paths relative to the Makefile's working directory instead avoids ever
+    # putting a colon into the rule text.
+    MAKE_VPATH="$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$WEBRTC_DIR" "$startdir/resources")"
+    MAKE_OBJDIR="$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$WEBRTC_OBJ/obj" "$startdir/resources")"
+fi
+
 # "gn"/ninja doesn't support cross-compiling WebRTC for Windows from a non-Windows host,
 # so build libdcsctp.a directly with cl.exe/lib.exe, the same way resources/Makefile does
 # for ppc64le (where "gn" also has no support). See resources/Makefile.windows.
 make $MAKE_ARGS -C "$startdir/resources" \
     -f Makefile.windows \
-    VPATH="$WEBRTC_DIR" \
-    OBJDIR="$WEBRTC_OBJ/obj" \
+    VPATH="$MAKE_VPATH" \
+    OBJDIR="$MAKE_OBJDIR" \
     CXX=cl \
     AR=lib
 
