@@ -8,14 +8,13 @@
 #>
 [CmdletBinding()]
 param(
-    # Path to the Java installation
-    [Parameter(Mandatory = $true)][string] $JavaHome,
+    # Path to the Java installation. Auto-detected from JAVA_HOME, the registry or PATH if omitted.
+    [string] $JavaHome,
     # Directory containing Google depot tools
     [Parameter(Mandatory = $true)][string] $DepotToolsDir,
     # Directory containing the WebRTC source
     [Parameter(Mandatory = $true)][string] $WebRtcDir,
-    # Architecture to build for
-    [Parameter(Mandatory = $true)]
+    # Architecture to build for. Defaults to the host system's architecture.
     [ValidateSet('x86-64', 'x86_64', 'amd64', 'x64', 'arm64', 'aarch64')]
     [string] $Arch,
     # Print compiler invocations
@@ -33,6 +32,52 @@ function Invoke-Checked
     if ($LASTEXITCODE -ne 0)
     {
         throw "'$Exe $($Arguments -join ' ')' failed with exit code $LASTEXITCODE"
+    }
+}
+
+if (-not $Arch)
+{
+    $Arch = switch ($env:PROCESSOR_ARCHITECTURE)
+    {
+        'ARM64' { 'arm64' }
+        default { 'x86-64' }
+    }
+    Write-Host "-Arch not specified; defaulting to the host architecture ($Arch)."
+}
+
+if (-not $JavaHome)
+{
+    # Registry first (how JDK installers register themselves), then java.exe on PATH,
+    # whose grandparent directory is the JDK root.
+    $JavaHome = Get-ItemProperty -Path 'HKLM:\SOFTWARE\JavaSoft\JDK\*' -ErrorAction SilentlyContinue |
+        Sort-Object PSChildName |
+        Select-Object -Last 1 -ExpandProperty JavaHome -ErrorAction SilentlyContinue
+    if (-not $JavaHome)
+    {
+        $java = Get-Command java.exe -ErrorAction SilentlyContinue
+        if ($java) { $JavaHome = Split-Path -Parent (Split-Path -Parent $java.Source) }
+    }
+    # jni.h is what the build actually needs, so reject a JRE-only directory.
+    if (-not $JavaHome -or -not (Test-Path -LiteralPath (Join-Path $JavaHome 'include\jni.h')))
+    {
+        throw '-JavaHome was not specified and could not be auto-detected; set it to a JDK installation.'
+    }
+    # Every JDK ships a "release" file with a JAVA_VERSION property; fall back to just
+    # the path if it is somehow missing.
+    $releaseFile = Join-Path $JavaHome 'release'
+    $version = $null
+    if (Test-Path -LiteralPath $releaseFile)
+    {
+        $versionLine = Get-Content -LiteralPath $releaseFile | Where-Object { $_ -match '^JAVA_VERSION=' }
+        if ($versionLine) { $version = ($versionLine -replace '^JAVA_VERSION=', '') -replace '"', '' }
+    }
+    if ($version)
+    {
+        Write-Host "-JavaHome not specified; defaulting to detected JDK $version at $JavaHome."
+    }
+    else
+    {
+        Write-Host "-JavaHome not specified; defaulting to the detected JDK at $JavaHome."
     }
 }
 
@@ -91,6 +136,7 @@ $env:JAVA_HOME = $JavaHome
 
 $DepotToolsDir = (Resolve-Path -LiteralPath $DepotToolsDir).Path
 $WebRtcDir = (Resolve-Path -LiteralPath $WebRtcDir).Path
+$ProjectDir = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 
 # They may have specified the gclient directory, not the src checkout subdirectory
 if ((-not (Test-Path -LiteralPath (Join-Path $WebRtcDir '.git'))) -and
@@ -105,10 +151,9 @@ $WebRtcObj = Join-Path $WebRtcDir $WebRtcBuild
 
 $env:PATH = "$DepotToolsDir;$env:PATH"
 
-$StartDir = $PWD.Path
 # Multi-config generators run the install step from the build directory, so a
 # relative CMAKE_INSTALL_PREFIX would not land at the project root.
-$InstallPrefix = Join-Path $StartDir "src/main/resources/win32-$JnaArch"
+$InstallPrefix = Join-Path $ProjectDir "src/main/resources/win32-$JnaArch"
 
 Push-Location -LiteralPath $WebRtcDir
 try
@@ -140,7 +185,7 @@ finally
     Pop-Location
 }
 
-Set-Location -LiteralPath $StartDir
+Set-Location -LiteralPath $ProjectDir
 
 $BuildDir = "cmake-build-windows-$GnArch"
 if (Test-Path -LiteralPath $BuildDir)
@@ -153,6 +198,7 @@ if (Test-Path -LiteralPath $BuildDir)
 function ConvertTo-CMakePath { param([string] $Path) $Path -replace '\\', '/' }
 
 $configureArgs = @(
+    '-S', (ConvertTo-CMakePath $ProjectDir),
     '-B', $BuildDir,
     "-DJAVA_HOME=$(ConvertTo-CMakePath $JavaHome)",
     "-DCMAKE_INSTALL_PREFIX=$(ConvertTo-CMakePath $InstallPrefix)",

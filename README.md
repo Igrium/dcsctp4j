@@ -128,11 +128,12 @@ To build a single architecture, or to pass build options, call the per-architect
 script directly:
 ```
 > resources\windows-build.ps1 -JavaHome $env:JAVA_HOME -DepotToolsDir C:\DepotTools `
-      -WebRtcDir C:\WebRTC -Arch x86-64 [-VerboseBuild] [-DebugBuild]
+      -WebRtcDir C:\WebRTC [-Arch x86-64] [-VerboseBuild] [-DebugBuild]
 ```
 
-Supported values for `-Arch` are `x86-64` and `arm64`. Only `x86-64` is built by
-`windows-build-all.ps1`; `arm64` is untested.
+Supported values for `-Arch` are `x86-64` and `arm64`; if omitted it defaults to the
+host system's architecture. Only `x86-64` is built by `windows-build-all.ps1`; `arm64`
+is untested.
 
 The resulting `dcsctp4j.dll` is installed into `src\main\resources\win32-x86-64`,
 matching the name JNA's `Platform.RESOURCE_PREFIX` uses to locate it inside the jar.
